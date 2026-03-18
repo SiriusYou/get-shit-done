@@ -214,7 +214,7 @@ function cmdResolveModel(cwd, agentType, raw) {
   output(result, raw, model);
 }
 
-function cmdCommit(cwd, message, files, raw, amend) {
+function cmdCommit(cwd, message, files, raw, amend, noVerify) {
   if (!message && !amend) {
     error('commit message required');
   }
@@ -241,8 +241,9 @@ function cmdCommit(cwd, message, files, raw, amend) {
     execGit(cwd, ['add', file]);
   }
 
-  // Commit
+  // Commit (--no-verify skips pre-commit hooks, used by parallel executor agents)
   const commitArgs = amend ? ['commit', '--amend', '--no-edit'] : ['commit', '-m', message];
+  if (noVerify) commitArgs.push('--no-verify');
   const commitResult = execGit(cwd, commitArgs);
   if (commitResult.exitCode !== 0) {
     if (commitResult.stdout.includes('nothing to commit') || commitResult.stderr.includes('nothing to commit')) {

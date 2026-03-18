@@ -205,6 +205,14 @@ Execute each wave in sequence. Within a wave: parallel if `PARALLELIZATION=true`
        Commit each task atomically. Create SUMMARY.md. Update STATE.md and ROADMAP.md.
        </objective>
 
+       <parallel_execution>
+       You are running as a PARALLEL executor agent. Use --no-verify on all git
+       commits to avoid pre-commit hook contention with other agents. The
+       orchestrator validates hooks once after all agents complete.
+       For gsd-tools commits: add --no-verify flag.
+       For direct git commits: use git commit --no-verify -m "..."
+       </parallel_execution>
+
        <execution_context>
        @~/.claude/get-shit-done/workflows/execute-plan.md
        @~/.claude/get-shit-done/templates/summary.md
@@ -242,7 +250,17 @@ Execute each wave in sequence. Within a wave: parallel if `PARALLELIZATION=true`
 
 3. **Wait for all agents in wave to complete.**
 
-4. **Report completion — spot-check claims first:**
+4. **Post-wave hook validation (parallel mode only):**
+
+   When agents committed with `--no-verify`, run pre-commit hooks once after the wave:
+   ```bash
+   # Run project's pre-commit hooks on the current state
+   git diff --cached --quiet || git stash  # stash any unstaged changes
+   git hook run pre-commit 2>&1 || echo "⚠ Pre-commit hooks failed — review before continuing"
+   ```
+   If hooks fail: report the failure and ask "Fix hook issues now?" or "Continue to next wave?"
+
+5. **Report completion — spot-check claims first:**
 
    For each SUMMARY.md:
    - Verify first 2 files from `key-files.created` exist on disk
