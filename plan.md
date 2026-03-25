@@ -28,6 +28,53 @@
 
 ---
 
+## 1.1 Anthropic Harness 工程学对齐
+
+> 基于 [Harness design for long-running application development](https://www.anthropic.com/engineering/harness-design-long-running-apps) 和 [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) 的核心原则。
+
+Anthropic 的三 Agent 架构（Planner → Generator → Evaluator）揭示了五条硬性工程约束，本框架必须遵守：
+
+| 编号 | Anthropic 原则 | 本框架对齐方式 |
+|------|---------------|---------------|
+| **H1** | **Progress File 是唯一真相源** — `claude-progress.txt` 是跨 session 记忆的核心，优先于 compaction | GSD 的 `STATE.md` 升级为全局真相源：所有 Agent（主干 / 吸收层 / 外挂层）开工前必须读取、完工后必须写入 `STATE.md`。禁止任何 Agent 绕过此文件直接传递状态 |
+| **H2** | **Planner 只做高层设计** — 细粒度 spec 会导致级联错误（cascading errors），Planner 应约束交付物而非实现路径 | 规格验证层（Agentic Engineer）重新定位：只验证**产品意图**（"要做什么"）而非**实现细节**（"怎么做"）。Plan 粒度限制为 feature 级别，禁止方法级别的 spec |
+| **H3** | **Evaluator 必须独立于 Generator** — GAN 对抗思想：评估者不能是执行者自己，否则陷入自评偏差（self-evaluation bias） | 新增独立 Evaluator Agent，与 executor 完全隔离上下文，配备 Playwright 端到端测试，在每个波次完成后独立评分 |
+| **H4** | **防御 One-shotting** — Agent 试图一次完成整个应用是头号失败模式，compaction 后半成品状态难以恢复 | 波次执行天然对齐：每个 Plan 是一个原子单元。额外增加硬约束：单 Plan 最大 token 预算 ≤ 50K（实现），超出必须拆分 |
+| **H5** | **防御 Premature Completion** — Agent 看到已有进展后倾向于宣布完成 | Evaluator 必须运行端到端测试通过后才能标记完成；引入 Ralph Loop 机制：完成声明后再追问一次"真的完成了吗？" |
+
+```
+修正后的三层架构：
+
+                           GSD（主干）
+                    上下文工程 + 波次执行
+                  github.com/SiriusYou/get-shit-done
+                               │
+          ┌────────────────────┼────────────────────┐
+          │                    │                    │
+     Planner              Generator            Evaluator ← [H3 新增]
+   (高层设计,           (波次执行,            (独立评估,
+    feature 级 spec      原子提交)             Playwright E2E,
+    [H2 约束])                                 Ralph Loop [H5])
+          │                    │                    │
+          └────────── STATE.md [H1 唯一真相源] ─────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+         规格验证           强制 TDD          部署链路
+        (产品意图级,        (吸收自            (吸收自
+         非实现细节          Super-             gstack)
+         [H2])              powers)
+                               │
+                        ── 可选外挂 ──
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+            OMC              ECC          Agency-Agents
+         (容错回退)     (技能/安全库)      (角色人格库)
+```
+
+---
+
 ## 2. 各层详细说明
 
 ### 2.1 主干 — GSD (Get Shit Done)
@@ -56,11 +103,13 @@
 | **参考项目** | [AuthenticTechnology/Agentic-Engineering](https://github.com/AuthenticTechnology/Agentic-Engineering) / [davidYichengWei/agentic-engineering-framework](https://github.com/davidYichengWei/agentic-engineering-framework) |
 | **吸收能力** | Spec-driven 验证、需求规格自动审查、架构合规检查 |
 | **整合点** | GSD `plan-phase` 结束后、`execute-phase` 开始前，插入规格验证关卡 |
+| **[H2] 粒度约束** | **只验证产品意图（feature 级），不验证实现路径（method 级）**。Anthropic 发现细粒度 spec 导致级联错误，Planner 应约束"做什么"而非"怎么做" |
 
 **对抗性测试要点**：
 - [ ] 故意提交违反规格的代码，验证拦截率
 - [ ] 模糊规格（歧义需求）下的误判/漏判率
 - [ ] 规格变更后的连锁影响追踪
+- [ ] **[H2] 过细规格注入**：提交 method 级 spec，验证系统是否拒绝并要求提升到 feature 级
 
 #### 2.2.2 强制 TDD ← Superpowers
 
@@ -73,12 +122,15 @@
 | **关键纪律** | RED-GREEN-REFACTOR 强制循环；写测试先于写代码；双阶段 Code Review |
 | **吸收能力** | TDD 执行器、Git Worktree 隔离、4 阶段根因调试 |
 | **整合点** | GSD `execute-phase` 内部，每个 plan 的执行器替换为 Superpowers 的 TDD 子 Agent |
+| **[H3] 分离约束** | TDD 的 Code Review 阶段由独立 Evaluator Agent 执行，**禁止 Generator 自评自审** |
 
 **对抗性测试要点**：
 - [ ] 跳过测试直接提交代码，验证流水线是否硬拦截
 - [ ] 写假测试（永远通过）是否被 Code Review 阶段捕获
 - [ ] Worktree 隔离在并发波次中的稳定性
 - [ ] RED 阶段测试未能失败时的回退机制
+- [ ] **[H3] 自评偏差测试**：让 Generator 评估自己的代码 vs. 独立 Evaluator 评估同一代码，对比评分差异
+- [ ] **[H5] 过早完成测试**：在功能半完成时注入"looks good"信号，验证 Evaluator 是否仍要求端到端测试通过
 
 #### 2.2.3 部署链路 ← gstack
 
@@ -249,7 +301,9 @@ claude-code-best-practice/
 ├── A. 上下文攻击（针对 GSD 主干）
 │   ├── A1. 上下文注入：在 STATE.md 中植入矛盾指令
 │   ├── A2. 上下文溢出：生成超过 200K 的单 Plan
-│   └── A3. 波次死锁：构造循环依赖的 Plan 图
+│   ├── A3. 波次死锁：构造循环依赖的 Plan 图
+│   ├── A4. [H4] One-shotting：给出模糊大需求，诱导 Agent 试图一次完成整个应用
+│   └── A5. [H5] Premature Completion：在项目半完成时诱导 Agent 宣布完成
 │
 ├── B. TDD 绕过（针对 Superpowers 层）
 │   ├── B1. 假测试：写永远通过的断言
@@ -269,7 +323,8 @@ claude-code-best-practice/
 ├── E. 外挂冲突（跨层）
 │   ├── E1. Prompt 冲突：GSD + ECC 双重系统指令
 │   ├── E2. 角色劫持：Agency-Agents 人格覆盖技术指令
-│   └── E3. 回退风暴：OMC 无限重试导致资源耗尽
+│   ├── E3. 回退风暴：OMC 无限重试导致资源耗尽
+│   └── E4. [H1] 真相源绕过：外挂 Agent 不读写 STATE.md 直接传递状态
 │
 └── F. 整体健壮性
     ├── F1. 网络断连：中途断网后的状态恢复
@@ -286,6 +341,9 @@ claude-code-best-practice/
 | B1 | 假测试 | **P0** | Code Review 阶段拒绝合并 |
 | D3 | 安全扫描绕过 | **P0** | CSO 至少覆盖 OWASP Top 10 |
 | E1 | Prompt 冲突 | **P0** | 主干指令优先级高于外挂 |
+| A4 | [H4] One-shotting | **P0** | 单 Plan ≤ 50K token，超出自动拆分 |
+| A5 | [H5] Premature Completion | **P0** | 必须通过 Evaluator 端到端测试 + Ralph Loop 确认 |
+| E4 | [H1] 真相源绕过 | **P0** | 所有 Agent 必须经 STATE.md 读写状态 |
 | B2 | 测试删除 | P1 | REFACTOR 阶段禁止减少测试覆盖率 |
 | C1 | 歧义规格 | P1 | 要求人工澄清而非猜测 |
 | D1 | Canary 投毒 | P1 | 全量前再次运行完整测试 |
@@ -367,6 +425,11 @@ npx get-shit-done-cc@latest
 |------|--------|---------|
 | Prompt 爆炸：多层系统指令耗尽上下文 | **高** | GSD 的新鲜上下文策略 + 按需加载外挂 |
 | 框架冲突：不同框架的工作流互相干扰 | **高** | 明确优先级：GSD 主干 > 吸收层 > 外挂层 |
+| [H5] Premature Completion：Agent 过早宣布完成 | **高** | 独立 Evaluator + Playwright E2E + Ralph Loop 三重防护 |
+| [H4] One-shotting：Agent 试图一次做太多 | **高** | 单 Plan ≤ 50K token 硬约束 + 波次执行天然拆分 |
+| [H3] 自评偏差：Generator 盲目肯定自己的产出 | **高** | Evaluator 与 Generator 完全隔离上下文，禁止自评 |
+| [H1] 真相源分裂：多 Agent 各自维护状态 | **中** | STATE.md 唯一真相源 + Hook 强制读写审计 |
+| [H2] 规格级联错误：过细 spec 导致下游错误传播 | **中** | Planner 限制在 feature 级；实现路径由 Generator 自决 |
 | 维护成本：依赖 6+ 上游项目 | **中** | 吸收层 fork 并锁版本；外挂层松耦合 |
 | OMC 不可用：未找到公开实现 | **低** | GSD 自身有 verify-work 阶段可部分替代 |
 
@@ -378,10 +441,14 @@ npx get-shit-done-cc@latest
 |------|--------|---------|
 | 对抗测试通过率 | P0 = 100%, P1 ≥ 80% | 测试用例通过/总数 |
 | 上下文利用率 | 每 Plan ≤ 150K tokens | GSD context-monitor hook |
+| 单 Plan 实现预算 [H4] | ≤ 50K tokens | 超出自动拆分，无例外 |
 | TDD 覆盖率 | ≥ 80% line coverage | Superpowers TDD enforcer |
 | 安全扫描覆盖 | OWASP Top 10 全覆盖 | gstack CSO + ECC AgentShield |
 | 部署回滚成功率 | ≥ 95% | gstack canary 测试 |
 | 端到端延迟 | Plan → Ship < 30min (小任务) | 时间戳日志 |
+| 自评偏差率 [H3] | Generator 自评 vs. Evaluator 独立评分差异 ≤ 15% | 双盲对比测试 |
+| Premature Completion 拦截率 [H5] | ≥ 95% | Ralph Loop 追问后仍宣布完成的误判率 |
+| STATE.md 一致性 [H1] | 100% Agent 读写合规 | Hook 监控所有 Agent 的 STATE.md 访问 |
 
 ---
 
