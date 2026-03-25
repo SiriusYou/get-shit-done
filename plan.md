@@ -149,14 +149,79 @@
 
 ---
 
-## 3. 知识库参考
+## 3. 知识库与方法论评估 — claude-code-best-practice
 
 | 属性 | 说明 |
 |------|------|
 | **仓库** | [SiriusYou/claude-code-best-practice](https://github.com/SiriusYou/claude-code-best-practice) |
-| **内容** | 84 Tips、开发工作流对比、Agent/Skill/Command/Hook 体系文档 |
-| **角色** | 本计划的参考知识库，不直接参与运行时 |
-| **关键参考** | Convergent Workflow 模式（Research → Plan → Execute → Review → Ship）、跨模型工作流、RPI、Ralph Wiggum Loop |
+| **上游** | Fork 自 [shanraisshan/claude-code-best-practice](https://github.com/shanraisshan/claude-code-best-practice)，215 commits |
+| **角色** | 方法论知识库 + 生态评估基准 |
+
+### 3.1 仓库结构
+
+```
+claude-code-best-practice/
+├── .claude/                    # agents, commands, skills, settings
+├── agent-teams/                # 多 Agent 协作模式
+├── best-practice/              # 核心最佳实践文档
+├── development-workflows/      # 开发工作流对比分析
+├── implementation/             # 实施指南
+├── orchestration-workflow/     # 编排工作流模式
+├── presentation/               # 演示材料
+├── reports/                    # 分析报告
+├── tips/                       # 84 条实用技巧
+├── videos/                     # 视频教程
+└── CLAUDE.md                   # 项目级 AI 记忆
+```
+
+### 3.2 核心知识体系
+
+| 概念 | 定义 | 对本框架的价值 |
+|------|------|---------------|
+| **Subagents** | 隔离上下文的自主执行器，拥有独立工具、权限、模型、记忆 | 直接验证 GSD 波次执行中 Agent 隔离的理论基础 |
+| **Commands** | 注入现有上下文的 Prompt 模板 | 可用于标准化对抗测试的触发方式 |
+| **Skills** | 可配置、可预加载、自动发现、支持上下文分叉和渐进披露 | 对比 ECC 125+ Skills 与 gstack 28 Skills 的设计哲学差异 |
+| **Hooks** | 在 Agent 循环外执行的用户自定义处理器 | 对抗测试中可作为监控探针 |
+| **MCP Servers** | 连接外部工具/数据库/API 的协议层 | 评估外挂层（ECC/Agency-Agents）接入方式 |
+| **Memory** | 通过 CLAUDE.md 和 @path 导入实现的持久上下文 | GSD 上下文工程文件体系的理论依据 |
+| **Convergent Workflow** | Research → Plan → Execute → Review → Ship | 所有主流框架收敛到的共同模式；作为对比基准 |
+
+### 3.3 生态对比数据（来源于该仓库）
+
+| 框架 | Stars | 方法论特征 | 差异化 |
+|------|-------|-----------|--------|
+| **Superpowers** | ~107K | TDD-first, Iron Laws, whole-plan review | 最刚性的纪律体系 |
+| **Everything Claude Code** | ~101K | Instinct scoring, AgentShield, 多语言规则 | 最全面的技能库 |
+| **Spec Kit** | ~81K | Spec-driven, constitution-based, 22+ tools | 规格驱动的宪章模式 |
+| **BMAD-METHOD** | ~42K | Full SDLC, agent personas, 22+ platforms | 全生命周期覆盖 |
+| **gstack** | ~41K | Role personas, /codex review, parallel sprints | 角色化部署链路 |
+| **Get Shit Done** | ~40K | Fresh 200K contexts, wave execution, XML plans | 上下文工程先驱 |
+
+### 3.4 关键方法论参考
+
+| 方法论 | 说明 | 对抗测试中的应用 |
+|--------|------|-----------------|
+| **RPI (Recursive Prompt Injection)** | 分析 Prompt 在多层嵌套中的退化模式 | 直接用于 E1（Prompt 冲突）测试设计 |
+| **Ralph Wiggum Loop** | 检测 Agent 陷入无效重试循环的反模式 | 直接用于 E3（回退风暴）测试的判定标准 |
+| **跨模型工作流** | 不同模型（Opus/Sonnet/Haiku）间的任务分配策略 | 用于 F2（模型降级）测试的基准行为定义 |
+| **Git Worktree 模式** | 隔离开发分支的最佳实践 | 验证 Superpowers Worktree 在 GSD 波次中的兼容性 |
+
+### 3.5 对本计划的具体贡献
+
+**作为评估基准**：
+- [ ] 用该仓库的 84 Tips 作为 checklist，审查 GSD 主干是否违反已知最佳实践
+- [ ] 用 development-workflows 中的对比数据，验证本框架的整合是否引入性能退化
+- [ ] 用 agent-teams 中的协作模式，评估波次执行中多 Agent 协作的上限
+
+**作为对抗测试工具**：
+- [ ] 用 RPI 分析方法，系统性测试 A1（上下文注入）攻击面
+- [ ] 用 Ralph Wiggum Loop 检测器，自动化识别 E3（回退风暴）
+- [ ] 用 Convergent Workflow 模式作为"黄金路径"，任何偏离都标记为异常
+
+**作为知识源**：
+- [ ] 将 84 Tips 中与 TDD、部署、安全相关的条目，映射到 Superpowers/gstack/ECC 的对应能力
+- [ ] 将 orchestration-workflow 中的编排模式，与 GSD 波次执行的实现进行 gap 分析
+- [ ] 将 best-practice 中的 CLAUDE.md 最佳实践，应用到整合框架的记忆层设计
 
 ---
 
@@ -171,6 +236,7 @@
 | **gstack** | ~45K | 部署链路 | Ship/Canary/CSO | 依赖 Chromium daemon |
 | **Agentic Engineer** | <1K | 规格验证 | Spec-driven 审查 | 生态小、文档少 |
 | **OMC** | N/A | 容错回退 | 失败重试 | 未公开、机制不明 |
+| **claude-code-best-practice** | N/A | 方法论基准/评估工具 | 84 Tips、RPI 分析、生态对比 | 非运行时组件 |
 
 ---
 
